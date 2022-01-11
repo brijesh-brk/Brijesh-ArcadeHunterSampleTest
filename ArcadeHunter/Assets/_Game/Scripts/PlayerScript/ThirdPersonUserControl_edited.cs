@@ -1,0 +1,114 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(ThirdPersonCharacter_edited))]
+public class ThirdPersonUserControl_edited : MonoBehaviour
+{
+    Joystick joystick;
+    //ButtonManager button;
+    //JoyButtton jumpButton,attackButton;
+
+    private ThirdPersonCharacter_edited m_Character; // A reference to the ThirdPersonCharacter on the object
+    private Transform m_Cam;                  // A reference to the main camera in the scenes transform
+    private Vector3 m_CamForward;             // The current forward direction of the camera
+    private Vector3 m_Move;
+    private bool m_Jump;                      // the world-relative desired move direction, calculated from the camForward and user input.
+    bool m_Attack = false;
+
+    [SerializeField] float startDelay = 2f;
+    [SerializeField] private List<IEnemy> enimies;
+
+
+    private void Start()
+    {
+        enimies = new List<IEnemy>();
+        enimies.AddRange(GameObject.FindObjectsOfType<EnemyThrowerController>());
+        enimies.AddRange(GameObject.FindObjectsOfType<EnemyController>());
+
+        joystick = FindObjectOfType<Joystick>();
+        // get the transform of the main camera
+        if (Camera.main != null)
+        {
+            m_Cam = Camera.main.transform;
+        }
+        else
+        {
+            Debug.LogWarning(
+                "Warning: no main camera found. Third person character needs a Camera tagged \"MainCamera\", for camera-relative controls.", gameObject);
+            // we use self-relative controls in this case, which probably isn't what the user wants, but hey, we warned them!
+        }
+
+        // get the third person character ( this should never be null due to require component )
+        m_Character = GetComponent<ThirdPersonCharacter_edited>();
+    }
+
+    float t = 0;
+    // Fixed update is called in sync with physics
+    private void FixedUpdate()
+    {
+        if (t < startDelay)
+        {
+            t += Time.fixedDeltaTime;
+        }
+
+        // read inputs
+        float h;//= Input.GetAxis("Horizontal");
+        float v;// = Input.GetAxis("Vertical");
+        h = joystick.Horizontal;
+        v = joystick.Vertical;
+        bool crouch = false;// Input.GetKey(KeyCode.C);
+        //m_Jump = Input.GetButton("Jump");
+        //m_Jump = jumpButton.pressed;
+        m_Attack = Input.GetKey(KeyCode.C);
+        //m_Attack = attackButton.pressed;
+
+        // calculate move direction to pass to character
+        if (m_Cam != null)
+        {
+            // calculate camera relative direction to move:
+            m_CamForward = Vector3.Scale(m_Cam.forward, new Vector3(1, 0, 1)).normalized;
+            m_Move = v * m_CamForward + h * m_Cam.right;
+        }
+        else
+        {
+            // we use world-relative directions in the case of no main camera
+            m_Move = v * Vector3.forward + h * Vector3.right;
+        }
+#if !MOBILE_INPUT
+        // walk speed multiplier
+        if (Input.GetKey(KeyCode.LeftShift)) m_Move *= 0.5f;
+#endif
+        if (m_Move == Vector3.zero && enimies.Count > 0 && t >= startDelay)
+        {
+            Transform closestEnemy=null;
+            float closestDistace = Mathf.Infinity;
+            for (int i = 0; i < enimies.Count; i++)
+            {
+                if (enimies[i] != null && enimies[i].GetPower() > 0)
+                {
+                    float dis = Vector3.Distance(transform.position, enimies[i].GetTransform().position);
+                    if (dis < closestDistace)
+                    {
+                        closestEnemy = enimies[i].GetTransform();
+                        closestDistace = dis;
+                    }
+                }
+            }
+
+            if (closestEnemy != null)
+            {
+                m_Character.targetEnemy = closestEnemy;
+                m_Attack = true;
+            }
+            else
+            {
+                UIManager.Instance.YouWon();
+            }
+        }
+        // pass all parameters to the character control script
+        m_Character.Move(m_Move, crouch, m_Jump, m_Attack);
+        m_Jump = false;
+        m_Attack = false;
+    }
+}
